@@ -1,15 +1,19 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
+import requests
 from pymongo import MongoClient
+
+from datetime import datetime, UTC
 
 
 # CONSTANTS
 
 # define the base URL for the audio files
-AUDIO_URL_BASE = "http://172.16.1.209:8000/"
+AUDIO_URL_BASE = "http://172.16.1.209:7000"
+AUDIO_URL_DOWNLOAD_BASE = "http://172.16.1.209:8000/"
 MONGO_HOST = 'localhost'
 MONGO_PORT = 27017
-MONGO_DB = 'audio_db'
-MONGO_COLLECTION = 'audio_collection'
+MONGO_DB = 'tts_db'
+MONGO_COLLECTION = 'audio_metadata'
 
 
 # create a MongoClient instance
@@ -19,15 +23,20 @@ client = MongoClient(MONGO_HOST, MONGO_PORT)
 client = client[MONGO_DB]
 
 # connect to the collection
-
 collection = client[MONGO_COLLECTION]
 
 # create a Flask app
 app = Flask(__name__)
 
 
-@app.route('/get_audios', methods=['GET'])
+@app.route('/audios', methods=['GET'])
 def get_all():
+    """
+    Get all the audio files from the database
+
+    Returns:
+    dict: A list of all the audio files in the database
+    """
     try:
         # get all the documents from the collection
         documents = collection.find({})
@@ -37,63 +46,196 @@ def get_all():
         for doc in documents:
             # remove the _id field from the document
             doc.pop('_id')
-            # create the audio URL
-            audio_url = AUDIO_URL_BASE + doc['msisdn']
-            doc['audio_url'] = audio_url
             # append the document to the list
             docs.append(doc)
         # return the list of documents as a JSON response
-        return {'audios': docs}
+        return {'audios': docs}, 200
     except Exception as e:
-        return {'error': str(e)}
+        return {'error': str(e)}, 500
 
 
-@app.route('/get_audio/<msisdn>', methods=['GET'])
-def get_one(msisdn):
+@app.route('/audios/<audio_identifier>', methods=['GET'])
+def get_one(audio_identifier):
+    """
+    Get a single audio file from the database
+
+    Args:
+    audio_identifier (str): The unique identifier of the audio file
+
+    Returns:
+    dict: The audio file as a dictionary
+    """
     try:
         # get the document from the collection
-        document = collection.find_one({'msisdn': msisdn})
+        document = collection.find_one({'audio_identifier': audio_identifier})
         if document is None:
-            return {'error': 'No document found with the given MSISDN'}
+            return {'error': 'No audio found with the given audio_identifier'}, 404
         # remove the _id field from the document
         document.pop('_id')
-        # create the audio URL
-        audio_url = AUDIO_URL_BASE + document['msisdn']
-        document['audio_url'] = audio_url
         # return the document as a JSON response
-        return document
+        return document, 200
     except Exception as e:
-        return {'error': str(e)}
+        return {'error': str(e)}, 500
 
 
-@app.route('/synthesize_audio', methods=['GET'])
-def transcribe_audio():
+@app.route('/audios', methods=['POST'])
+def synthesize_audio():
+    """
+    Synthesizes an audio file and saves it to the database
+
+    Body Params:
+    text (str): The text to synthesize
+    msisdn (str): The MSISDN of the user
+    voiceCode (str): The voice code to use
+    speech_rate (int): The speech rate to use
+    use_stress (bool): Whether to use stress
+    quality (str): The quality of the audio
+    voiceCode (str): The voice code to use
+    audio_identifier (str): The unique identifier of the audio file
+
+    Returns:
+    dict: The result of the operation    
+    """
     try:
         # get text from body
-        text = request.args.get('text')
-        # write the code for actually creating text-to-speech here
-        # hopin the data that comes back is in the format of a dictionary
+        body = request.get_json()
+        if 'text' not in body:
+            return {'error': 'Text not found in request body'}
 
-        data = {
+        if 'msisdn' not in body:
+            return {'error': 'MSISDN not found in request body'}
 
-            "text": "नमस्ते, Sachin Vithal Hogar यह कॉल आपके Bajaj Auto Finance लोन के संबंध में है. आपकी Bajaj Auto Finance loan की किस्त 4925 रुपये 3 july 2023 को देय है. हम आपसे अनुरोध कर रहे हैं कि नियत तिथि से पहले अपने खाते में पर्याप्त शेष राशि बनाए रखें. पुष्टि करने के लिए 1 दबाएँ. धन्यवाद.",
+        if 'voiceCode' not in body:
+            return {'error': 'Voice code not found in request body'}
 
-            "speech_rate": 0.91,
+        if 'speech_rate' not in body:
+            return {'error': 'Speech rate not found in request body'}
 
-            "use_stress": "False",
+        if 'use_stress' not in body:
+            return {'error': 'Use stress not found in request body'}
 
-            "quality": 20,
+        if 'quality' not in body:
+            return {'error': 'Quality not found in request body'}
 
-            "msisdn": "112233",
+        if 'voiceCode' not in body:
+            return {'error': 'Voice code not found in request body'}
 
-            "voiceCode": "hi_f1"
+        if 'audio_identifier' not in body:
 
-        }
+            return {'error': 'Audio identifier not found in request body'}
 
-        return data
+        check = collection.find_one(
+            {"audio_identifier": body["audio_identifier"]})
+
+        if check:
+            return {'error': 'Audio identifier already exists'}, 409
+
+        # send a request to the text-to-speech API
+        response = requests.post(
+            f"{AUDIO_URL_BASE}/synthesize", json=body)
+
+        # check if the request was successful
+        if response.status_code != 200:
+            return {'error': 'Failed to synthesize audio'}
+
+        # get the audio file from the response
+        audio = response.json()
+
+        if 'error' in audio:
+            return {'error': audio['error']}
+
+        # # DUMMY RESPONSE FROM THE API
+        # audio = {
+        #     'message': 'success',
+        #     'msisdn': body['msisdn'],
+        #     'status': 200
+        # }
+
+        audio["audio_url"] = AUDIO_URL_DOWNLOAD_BASE + audio["msisdn"] + ".wav"
+        audio["text"] = body["text"]
+        audio["msisdn"] = body["msisdn"]
+        audio["voiceCode"] = body["voiceCode"]
+        audio["speech_rate"] = body["speech_rate"]
+        audio["use_stress"] = body["use_stress"]
+        audio["quality"] = body["quality"]
+        audio["voiceCode"] = body["voiceCode"]
+        audio["audio_identifier"] = body["audio_identifier"]
+
+        current_time = datetime.now(UTC)
+        audio["created_at"] = current_time
+        audio["updated_at"] = current_time
+
+        # save the audio file to the database
+        collection.insert_one(audio)
+        # print(audio)
+        res = {"status": "success"}
+        return jsonify(res), 200
 
     except Exception as e:
-        return {'error': str(e)}
+        print(e)
+        return {'error': str(e)}, 500
+
+
+@app.route('/audios/<audio_identifier>', methods=['PATCH'])
+def update_audio(audio_identifier):
+    """
+    Update an audio file in the database
+
+    Args:
+    audio_identifier (str): The unique identifier of the audio file
+
+    Body Params:
+    text (str): The text to synthesize (optional)
+    msisdn (str): The MSISDN of the user (optional)
+    voiceCode (str): The voice code to use (optional)
+    speech_rate (int): The speech rate to use (optional)
+    use_stress (bool): Whether to use stress (optional)
+    quality (str): The quality of the audio (optional)
+    voiceCode (str): The voice code to use (optional)
+    audio_identifier (str): The unique identifier of the audio file (optional)
+
+    Returns:
+    dict: The result of the operation
+    """
+
+    try:
+        # get the document from the collection
+        document = collection.find_one({'audio_identifier': audio_identifier})
+        if document is None:
+            return {'error': 'No audio found with the given audio_identifier'}, 404
+        # get the updated fields from the request body
+        body = request.get_json()
+        # update the document with the new fields
+        collection.update_one({'audio_identifier': audio_identifier}, {
+            '$set': body})
+        # return a success message
+        return {'status': 'success'}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
+
+@app.route('/audios/<audio_identifier>', methods=['DELETE'])
+def delete_audio(audio_identifier):
+    """
+    Delete an audio file from the database
+
+    Args:
+    audio_identifier (str): The unique identifier of the audio file
+
+    """
+
+    try:
+        # get the document from the collection
+        document = collection.find_one({'audio_identifier': audio_identifier})
+        if document is None:
+            return {'error': 'No audio found with the given audio_identifier'}, 404
+        # remove the _id field from the document
+        document.pop('_id')
+        # return the document as a JSON response
+        collection.delete_one({'audio_identifier': audio_identifier})
+        return {'status': 'success'}, 204
+    except Exception as e:
+        return {'error': str(e)}, 500
 
 
 if __name__ == '__main__':
