@@ -100,32 +100,32 @@ def synthesize_audio():
         # get text from body
         body = request.get_json()
         if 'text' not in body:
-            return {'error': 'Text not found in request body'}
+            return {'error': 'Text not found in request body'}, 403
 
         if 'msisdn' not in body:
-            return {'error': 'MSISDN not found in request body'}
+            return {'error': 'MSISDN not found in request body'}, 403
 
         if 'voiceCode' not in body:
-            return {'error': 'Voice code not found in request body'}
+            return {'error': 'Voice code not found in request body'}, 403
 
         if 'speech_rate' not in body:
-            return {'error': 'Speech rate not found in request body'}
+            return {'error': 'Speech rate not found in request body'}, 403
 
         if 'use_stress' not in body:
-            return {'error': 'Use stress not found in request body'}
+            return {'error': 'Use stress not found in request body'}, 403
 
         if 'quality' not in body:
-            return {'error': 'Quality not found in request body'}
+            return {'error': 'Quality not found in request body'}, 403
 
         if 'voiceCode' not in body:
-            return {'error': 'Voice code not found in request body'}
+            return {'error': 'Voice code not found in request body'}, 403
 
         if 'audio_identifier' not in body:
 
-            return {'error': 'Audio identifier not found in request body'}
+            return {'error': 'Audio identifier not found in request body'}, 403
 
         check = collection.find_one(
-            {"audio_identifier": body["audio_identifier"]})
+            {"audio_identifier": body["audio_identifier"]}), 409
 
         if check:
             return {'error': 'Audio identifier already exists'}, 409
@@ -136,13 +136,13 @@ def synthesize_audio():
 
         # check if the request was successful
         if response.status_code != 200:
-            return {'error': 'Failed to synthesize audio'}
+            return {'error': 'Failed to synthesize audio'}, 500
 
         # get the audio file from the response
         audio = response.json()
 
         if 'error' in audio:
-            return {'error': audio['error']}
+            return {'error': audio['error']}, 500
 
         # # DUMMY RESPONSE FROM THE API
         # audio = {
