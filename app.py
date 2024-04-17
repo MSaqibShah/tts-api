@@ -12,7 +12,7 @@ AUDIO_URL_BASE = "http://172.16.1.209:7000"
 AUDIO_URL_DOWNLOAD_BASE = "http://172.16.1.209:8000/"
 MONGO_HOST = 'localhost'
 MONGO_PORT = 27017
-MONGO_DB = 'tts_db'
+MONGO_DB = 'tts_db_1'
 MONGO_COLLECTION = 'audio_metadata'
 
 
@@ -125,7 +125,7 @@ def synthesize_audio():
             return {'error': 'Audio identifier not found in request body'}, 403
 
         check = collection.find_one(
-            {"audio_identifier": body["audio_identifier"]}), 409
+            {"audio_identifier": body["audio_identifier"]})
 
         if check:
             return {'error': 'Audio identifier already exists'}, 409
